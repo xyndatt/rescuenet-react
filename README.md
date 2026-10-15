@@ -1,3 +1,4 @@
+
 # RescueNet Command (Front End)
 
 React + Vite. Login -> Admin Dashboard -> Disaster Officer Dashboard.
@@ -19,4 +20,3 @@ Open the link shown (usually http://localhost:5173).
 - src/App.jsx            state + all actions (verify, assign, dispatch, backup...)
 - src/components/        ui.jsx, MapView, Bell, Frame (sidebar+topbar), ReportInfo
 - src/pages/             Login, AdminApp, OfficerApp
-- src/styles.css         rescue theme (orange / navy / yellow)
