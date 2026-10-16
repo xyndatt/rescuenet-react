@@ -55,7 +55,7 @@ export function Timeline({items}) {
   return <div className="timeline">{[...items].reverse().map((t, i) => <div className="tl" key={i}><i/><div><div className="t">{t.text}</div><small>{t.by} · {fmtTime(t.at)}</small></div></div>)}</div>;
 }
 export function FlowBar({r}) {
-  if (r.status === 'Rejected') return <div className="banner bad"><Icon n="alert"/><div className="grow"><b>Rejected — FALSE information</b><p>{r.rejectReason}</p></div></div>;
+  if (['Rejected','Duplicate','Cancelled'].includes(r.status)) return <div className="banner bad"><Icon n="alert"/><div className="grow"><b>{r.status === 'Rejected' ? 'Rejected — FALSE information' : r.status === 'Duplicate' ? 'Marked as duplicate' : 'Report cancelled'}</b><p>{r.rejectReason}</p></div></div>;
   const idx = FLOW.indexOf(r.status);
   return <div><div className="progress">{FLOW.map((s, i) => <i key={s} className={i < idx ? 'c' : i === idx ? 'd' : ''}/>)}</div>
     <div className="progress-l"><span>Submitted</span><b style={{color:'var(--orange-d)'}}>{r.status}</b><span>Closed</span></div></div>;

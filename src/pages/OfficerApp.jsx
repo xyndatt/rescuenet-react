@@ -4,7 +4,11 @@ import { ICONS, Icon, Logo, Badge, StatusBadge, PrioBadge, VerifyBadge, TypeIco,
 import { Ctx, useApp } from '../context';
 import { MapView, MapLegend } from '../components/MapView';
 import { Frame } from '../components/Frame';
+import { PhotoGallery } from '../components/Photos';
+import { useWatchPosition } from '../useGeo';
 import { ReportInfo } from '../components/ReportInfo';
+import { ReportDownloads } from './Analytics';
+const phoneKey = v => { const d = String(v || '').replace(/\D/g, ''); return d.length >= 7 ? d.slice(-10) : ''; };
 export function OfficerMissionDrawer({id, me, onClose}) {
   const {db, A} = useApp(); const r = db.reports.find(x => x.id === id);
   const [picked, setPicked] = useState([]); const [dnote, setDnote] = useState(''); const [boReason, setBoReason] = useState(''); const [boOpen, setBoOpen] = useState(false); const [sum, setSum] = useState('');
@@ -21,6 +25,7 @@ export function OfficerMissionDrawer({id, me, onClose}) {
     {r.backup && <div className={'banner ' + (r.backup.status === 'assigned' ? 'ok' : 'info')}><Icon n="backup"/><div className="grow"><b>{r.backup.status === 'assigned' ? 'Backup approved by Admin' : 'Backup requested — waiting for Admin'}</b><p>{r.backup.status === 'assigned' ? offName(db, r.backup.officerId) + ' has been tasked to reinforce this mission.' : 'The Admin will assign a backup officer.'}</p></div></div>}
     {r.completion && r.status !== 'Resolved' && r.status !== 'Closed' && <div className="banner ok"><Icon n="check"/><div className="grow"><b>✅ Rescue team reports MISSION COMPLETED</b><p>{r.completion.rescued} people rescued. {r.completion.notes}</p></div></div>}
     <ReportInfo r={r} db={db}/>
+    <PhotoGallery r={r} canAdd={!['Closed', 'Rejected', 'Duplicate', 'Cancelled'].includes(r.status)}/>
     <div className="card"><div className="card-h"><h4>Incident location</h4><span className="sp"/><Badge color="#1D6FDB"><Icon n="pin"/> {dist.toFixed(1)} km from your station</Badge></div><div className="card-b"><MapView reports={[r]} officers={[me]} selectedId={r.id} height={240} line={[[me.lat, me.lng], [r.lat, r.lng]]}/>
       <div className="row-flex mt"><a className="btn btn-ghost btn-sm" target="_blank" rel="noreferrer" href={`https://www.openstreetmap.org/?mlat=${r.lat}&mlon=${r.lng}#map=16/${r.lat}/${r.lng}`}>Open in OpenStreetMap ↗</a></div></div></div>
 
@@ -64,7 +69,7 @@ export function OfficerDashboard({me, openReport, setView}) {
   const done = db.reports.filter(r => r.officerId === me.id && ['Resolved', 'Closed'].includes(r.status));
   const alerts = mine.filter(r => (r.backupAlert && !r.backupAlert.handled && !r.backup) || (r.completion && r.officerId === me.id));
   return <>
-    <PageHead title={'Good day, ' + me.name.split(' ')[0] + ' ' + me.name.split(' ')[1]} sub={me.station + ' · Area: ' + me.muni}/>
+    <PageHead title={'Good day, ' + me.name.split(' ')[0] + ' ' + me.name.split(' ')[1]} sub={me.station + ' · Area: ' + (me.barangay ? me.barangay + ', ' : '') + me.muni}><ReportDownloads reports={db.reports.filter(r => r.officerId === me.id || (r.backup && r.backup.officerId === me.id))}/></PageHead>
     <div className="grid g4" style={{marginBottom:16}}>
       <StatCard label="New tasks from Admin" value={awaiting.length} color="#FF5B14" icon="alert" hint="Dispatch a team"/>
       <StatCard label="Teams in the field" value={field.length} color="#1D6FDB" icon="users" hint="Ongoing rescues"/>
@@ -74,7 +79,7 @@ export function OfficerDashboard({me, openReport, setView}) {
     <div className="grid g-main">
       <div className="card"><div className="card-h"><h4>Tasks assigned to you</h4><span className="sp"/><button className="btn btn-ghost btn-sm" onClick={() => setView('missions')}>View all</button></div>
         {mine.length === 0 ? <div className="empty"><b>No active tasks</b>You'll be notified when the Admin assigns you a verified incident.</div> : mine.slice(0, 6).map(r => <MissionRow key={r.id} r={r} me={me} onOpen={openReport}/>)}</div>
-      <div className="card"><div className="card-h"><h4>Incident map</h4></div><div className="card-b"><MapView reports={mine} officers={[me]} onSelect={openReport} height={330}/><MapLegend/></div></div>
+      <div className="card"><div className="card-h"><h4>Incident map</h4></div><div className="card-b"><MapView reports={mine} officers={[me]} rescuers={db.rescuers} onSelect={openReport} height={330}/><MapLegend/></div></div>
     </div>
   </>;
 }
@@ -90,18 +95,53 @@ export function OfficerMissions({me, openReport}) {
   </>;
 }
 
+export function OfficerRescuers({me}) {
+  const {db, A} = useApp(); const blank = {name:'', unit:'BFP', phone:'', email:'', password:''};
+  const [adding, setAdding] = useState(false); const [del, setDel] = useState(null); const [form, setForm] = useState(blank); const [err, setErr] = useState('');
+  const area = me.barangay || me.muni; const set = (k, v) => setForm({...form, [k]: v});
+  const save = () => {
+    if (!form.name.trim() || !form.email.trim() || !form.password) return setErr('Name, email and password are required.');
+    if (!/^\S+@\S+\.\S+$/.test(form.email)) return setErr('Enter a valid email address.');
+    if (form.password.length < 6) return setErr('Password must be at least 6 characters.');
+    if (db.rescuers.some(x => x.email.toLowerCase() === form.email.trim().toLowerCase())) return setErr('That email is already registered.');
+    if (phoneKey(form.phone) && [...(db.officers || []), ...(db.rescuers || [])].some(x => phoneKey(x.phone) === phoneKey(form.phone))) return setErr('That mobile number is already registered to another account.');
+    A.addRescuer(form); setAdding(false); setErr(''); setForm(blank);
+  };
+  return <>
+    <PageHead title="My Rescuers" sub={'Rescuers you create belong to your area: ' + area + '. They sign in on the Rescuer tab to receive missions and report progress.'}><button className="btn btn-primary" onClick={() => setAdding(true)}><Icon n="plus"/>Add rescuer</button></PageHead>
+    {db.rescuers.length === 0 ? <div className="card empty"><b>No rescuers yet</b>Add the BFP, SRR and Ambulance team members who work under you.</div> :
+    <div className="grid g3">{db.rescuers.map(x => <div className="card off-card" key={x.id}>
+      <div className="top-r"><div className="avatar">{initials(x.name)}</div><div className="sp"><b style={{fontSize:16}}>{x.name}</b><div className="hint">{(UNITS[x.unit] || {}).icon} {x.unit} team</div></div></div>
+      <dl><dt>GPS</dt><dd>{x.live ? '📡 live · ' + ago(x.liveAt) : 'Offline'}</dd><dt>Barangay</dt><dd>{x.barangay}</dd><dt>Phone</dt><dd>{x.phone || '—'}</dd><dt>Email</dt><dd>{x.email}</dd></dl>
+      <div className="foot"><span className="sp"/><button className="btn btn-ghost btn-sm" style={{color:'var(--red)'}} onClick={() => setDel(x)}><Icon n="trash"/>Remove</button></div></div>)}</div>}
+    {adding && <Modal title="Add Rescuer" onClose={() => setAdding(false)} footer={<><button className="btn btn-ghost" onClick={() => setAdding(false)}>Cancel</button><button className="btn btn-primary" onClick={save}>Create account</button></>}>
+      {err && <div className="err">{err}</div>}
+      <div className="field"><label>Full name</label><input className="input" value={form.name} onChange={e => set('name', e.target.value)}/></div>
+      <div className="grid g2"><div className="field"><label>Team</label><select className="input" value={form.unit} onChange={e => set('unit', e.target.value)}>{Object.keys(UNITS).map(u => <option key={u} value={u}>{UNITS[u].icon} {u} — {UNITS[u].full}</option>)}</select></div>
+        <div className="field"><label>Barangay</label><input className="input" value={area} disabled/></div></div>
+      <div className="field"><label>Mobile number</label><input className="input" value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="09XX XXX XXXX"/></div>
+      <div className="grid g2"><div className="field"><label>Email (login)</label><input className="input" value={form.email} onChange={e => set('email', e.target.value)}/></div><div className="field"><label>Temporary password</label><input className="input" type="text" value={form.password} onChange={e => set('password', e.target.value)}/></div></div>
+      <p className="hint">The rescuer is placed in your barangay automatically and can only see missions assigned to you.</p></Modal>}
+    {del && <Confirm danger title="Remove rescuer?" body={del.name + ' will lose access immediately.'} label="Remove rescuer" onNo={() => setDel(null)} onYes={() => { A.removeRescuer(del.id); setDel(null); }}/>}
+  </>;
+}
+
 export function OfficerApp({me, onLogout}) {
-  const {db} = useApp(); const [view, setView] = useState('dashboard'); const [open, setOpen] = useState(null);
+  const {db, A} = useApp(); const [view, setView] = useState('dashboard'); const [open, setOpen] = useState(null); const [share, setShare] = useState(false);
+  const gps = useWatchPosition(share, pos => A.updateLocation(me.id, pos));
   const mine = activeTasksOf(db, me.id);
   const nav = [
     {key:'dashboard', label:'Dashboard', icon:'dashboard'},
     {key:'missions', label:'My Missions', icon:'flag', badge:mine.filter(r => r.dispatches.length === 0).length},
+    {key:'rescuers', label:'My Rescuers', icon:'users'},
     {key:'map', label:'Incident Map', icon:'map'}
   ];
-  return <Frame roleLabel="Disaster Officer" user={{name:me.name, title:me.rank}} nav={nav} view={view} setView={setView} onOpenReport={id => id && setOpen(id)} notifTo={me.id} onLogout={onLogout} title={nav.find(n => n.key === view).label}>
+  return <Frame roleLabel="Disaster Officer" user={{name:me.name, title:me.rank}} nav={nav} view={view} setView={setView} onOpenReport={id => id && setOpen(id)} notifTo={me.id} onLogout={onLogout} title={nav.find(n => n.key === view).label}
+    topExtra={<button className={'btn btn-sm ' + (share ? 'btn-green' : 'btn-yellow')} onClick={() => setShare(!share)} title="Share your live GPS position with the Admin"><span>{share ? (gps.status === 'live' ? '📡 GPS live — tap to stop' : gps.status === 'error' ? '⚠ ' + gps.error : '📡 Locating…') : '📍 Share my GPS'}</span></button>}>
     {view === 'dashboard' && <OfficerDashboard me={me} openReport={setOpen} setView={setView}/>}
     {view === 'missions' && <OfficerMissions me={me} openReport={setOpen}/>}
-    {view === 'map' && <><PageHead title="Incident Map" sub="Your station and the incidents assigned to you."/><div className="card"><div className="card-b"><MapView reports={mine} officers={[me]} selectedId={open} onSelect={setOpen} height={560}/><MapLegend/></div></div></>}
+    {view === 'rescuers' && <OfficerRescuers me={me}/>}
+    {view === 'map' && <><PageHead title="Incident Map" sub="Your station and the incidents assigned to you."/><div className="card"><div className="card-b"><MapView reports={mine} officers={[me]} rescuers={db.rescuers} selectedId={open} onSelect={setOpen} height={560}/><MapLegend/></div></div></>}
     {open && <OfficerMissionDrawer id={open} me={me} onClose={() => setOpen(null)}/>}
   </Frame>;
 }

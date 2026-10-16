@@ -1,0 +1,11 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Photos are uploaded ONLY by the backend (Admin SDK bypasses these rules).
+    // Signed-in admins and officers may view them.
+    match /reports/{reportId}/{file} {
+      allow read: if request.auth != null && request.auth.token.role in ['admin', 'officer'];
+      allow write: if false;
+    }
+  }
+}

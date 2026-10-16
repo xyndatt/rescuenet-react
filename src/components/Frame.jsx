@@ -3,9 +3,10 @@ import { KEY, ADMIN, TYPES, PRIORITY, UNITS, RECOMMENDED, UNIT_FLOW, FLOW, STATU
 import { ICONS, Icon, Logo, Badge, StatusBadge, PrioBadge, VerifyBadge, TypeIco, Donut, StatCard, PageHead, Drawer, Modal, Confirm, Timeline, FlowBar } from '../components/ui';
 import { Ctx, useApp } from '../context';
 import { Bell } from './Bell';
+import { pushConfigured, pushEnabled, enablePush } from '../push';
 /* Shell split: Header is rendered by ShellFrame below so pages can be injected */
-export function Frame({roleLabel, user, nav, view, setView, onOpenReport, notifTo, onLogout, title, topExtra, children}) {
-  const [side, setSide] = useState(false);
+export function Frame({roleLabel, user, nav, view, setView, onOpenReport, notifTo, onLogout, title, topExtra, hideBell, children}) {
+  const [side, setSide] = useState(false); const {toast} = useApp(); const [pushOn, setPushOn] = useState(pushEnabled());
   return <div className="shell">
     <div className={'scrim ' + (side ? 'open' : '')} onClick={() => setSide(false)}/>
     <aside className={'side ' + (side ? 'open' : '')}>
@@ -19,7 +20,8 @@ export function Frame({roleLabel, user, nav, view, setView, onOpenReport, notifT
         <button className="iconbtn menu" onClick={() => setSide(true)}><Icon n="menu"/></button>
         <div><h2>{title}</h2><div className="date">{new Date().toLocaleDateString('en-PH', {weekday:'long', month:'long', day:'numeric', year:'numeric'})}</div></div>
         <div className="sp"/>{topExtra}
-        <Bell to={notifTo} onOpen={onOpenReport}/>
+        {!hideBell && pushConfigured() && !pushOn && <button className="btn btn-ghost btn-sm" title="Get alerts even when this tab is in the background" onClick={() => enablePush().then(() => { setPushOn(true); toast('Push alerts enabled on this browser'); }).catch(e => toast(e.message, 'err'))}><Icon n="bell"/><span>Enable alerts</span></button>}
+        {!hideBell && <Bell to={notifTo} onOpen={onOpenReport}/>}
         <div className="user-chip"><div className="avatar">{initials(user.name)}</div><div><b>{user.name}</b><small>{user.title}</small></div></div>
       </header>
       <div className="content">{children}</div>

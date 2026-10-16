@@ -1,13 +1,17 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { KEY, ADMIN, TYPES, PRIORITY, UNITS, RECOMMENDED, UNIT_FLOW, FLOW, STATUS_COLOR, MUNI, uid, esc, km, fmtTime, ago, initials, getR, offName, isActive, prioSort, activeTasksOf, dupesOf, seed, loadDb, loadSession } from '../data';
+import { KEY, ADMIN, TYPES, PRIORITY, EXTRA_STATUS, UNITS, RECOMMENDED, UNIT_FLOW, FLOW, STATUS_COLOR, MUNI, uid, esc, km, fmtTime, ago, initials, getR, offName, isActive, prioSort, activeTasksOf, dupesOf, seed, loadDb, loadSession } from '../data';
 import { ICONS, Icon, Logo, Badge, StatusBadge, PrioBadge, VerifyBadge, TypeIco, Donut, StatCard, PageHead, Drawer, Modal, Confirm, Timeline, FlowBar } from '../components/ui';
 import { Ctx, useApp } from '../context';
 import { MapView, MapLegend } from '../components/MapView';
+import { PhotoGallery } from '../components/Photos';
 import { Frame } from '../components/Frame';
 import { ReportInfo } from '../components/ReportInfo';
+import { Analytics } from './Analytics';
+import { api } from '../api';
+const phoneKey = v => { const d = String(v || '').replace(/\D/g, ''); return d.length >= 7 ? d.slice(-10) : ''; };
 export function AdminReportDrawer({id, onClose}) {
   const {db, A} = useApp(); const r = db.reports.find(x => x.id === id);
-  const [reason, setReason] = useState(''); const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState(''); const [rejecting, setRejecting] = useState(false); const [other, setOther] = useState(null); const [dupOf, setDupOf] = useState(''); const [cReason, setCReason] = useState('');
   if (!r) return null;
   const dups = dupesOf(db, r);
   const ranked = db.officers.map(o => ({...o, dist: km(o.lat, o.lng, r.lat, r.lng), load: activeTasksOf(db, o.id).length})).sort((a, b) => a.dist - b.dist);
@@ -15,8 +19,9 @@ export function AdminReportDrawer({id, onClose}) {
   const s1 = r.verification === 'verified', s2 = !!r.priority, s3 = !!r.officerId;
   return <Drawer kicker={r.id} title={r.address} onClose={onClose}>
     <ReportInfo r={r} db={db}/>
+    <PhotoGallery r={r} canAdd={!['Closed', ...EXTRA_STATUS].includes(r.status)} canDelete/>
     {dups.length > 0 && r.verification !== 'false' && <div className="banner warn"><Icon n="alert"/><div className="grow"><b>Possible duplicate report</b><p>Similar {r.type.toLowerCase()} report(s) within 1.5 km: {dups.map(d => d.id).join(', ')}. Review before dispatching.</p></div></div>}
-    {r.verification === 'false' ? <div className="banner bad"><div className="grow"><b>This report was marked FALSE</b><p>{r.rejectReason}</p></div></div> :
+    {r.verification === 'false' ? <div className="banner bad"><div className="grow"><b>{r.status === 'Duplicate' ? 'This report was marked as a DUPLICATE' : r.status === 'Cancelled' ? 'This report was CANCELLED' : 'This report was marked FALSE'}</b><p>{r.rejectReason}</p></div></div> :
     <div className="card"><div className="card-h"><h4>Admin actions</h4></div><div className="card-b steps">
       <div className={'step ' + (s1 ? 'done' : 'now')}><div className="no">{s1 ? '✓' : 1}</div><div className="body"><h5>Verify information</h5>
         {s1 ? <span className="hint">Confirmed as true information.</span> : rejecting ? <>
@@ -35,6 +40,14 @@ export function AdminReportDrawer({id, onClose}) {
             <div className="t"><b>{o.name} {i === 0 && <Badge color="#FF5B14">NEAREST</Badge>}</b><span>{o.station} · {o.dist.toFixed(1)} km away · {o.load} active task{o.load === 1 ? '' : 's'}</span></div>
             {r.officerId === o.id ? <Badge color="#12A150">Assigned</Badge> : <button className="btn btn-primary btn-sm" disabled={locked} onClick={() => A.assign(r.id, o.id)}>{r.officerId ? 'Reassign' : 'Assign task'}</button>}</div>)}</>}
       </div></div>
+    </div></div>}
+    {r.verification !== 'false' && !locked && !['Resolved', 'Closed'].includes(r.status) && <div className="card"><div className="card-h"><h4>Other actions</h4></div><div className="card-b">
+      {!other && <div className="row-flex"><button className="btn btn-ghost btn-sm" onClick={() => setOther('dup')}>Mark as duplicate</button><button className="btn btn-ghost btn-sm" onClick={() => setOther('cancel')}>Cancel report</button></div>}
+      {other === 'dup' && <><p className="hint" style={{marginBottom:8}}>Choose the original report this one repeats.</p>
+        <select className="input" value={dupOf} onChange={e => setDupOf(e.target.value)}><option value="">Select original report…</option>{[...dups, ...db.reports.filter(x => x.id !== r.id && !dups.some(d => d.id === x.id))].map(x => <option key={x.id} value={x.id}>{x.id} · {x.type} · {x.address}</option>)}</select>
+        <div className="row-flex mt"><button className="btn btn-primary btn-sm" disabled={!dupOf} onClick={() => { A.markDuplicate(r.id, dupOf); setOther(null); }}>Confirm duplicate</button><button className="btn btn-ghost btn-sm" onClick={() => setOther(null)}>Back</button></div></>}
+      {other === 'cancel' && <><textarea className="input" placeholder="Reason (e.g. reporter called to withdraw the report)" value={cReason} onChange={e => setCReason(e.target.value)}/>
+        <div className="row-flex mt"><button className="btn btn-red btn-sm" disabled={cReason.trim().length < 3} onClick={() => { A.cancelReport(r.id, cReason.trim()); setOther(null); }}>Confirm cancel</button><button className="btn btn-ghost btn-sm" onClick={() => setOther(null)}>Back</button></div></>}
     </div></div>}
     {r.status === 'Resolved' && <div className="banner ok"><Icon n="check"/><div className="grow"><b>Officer submitted a completion report</b><p>{r.completion ? r.completion.rescued + ' people rescued. ' : ''}{r.officerSummary}</p></div><button className="btn btn-green btn-sm" onClick={() => A.close(r.id)}>Close case</button></div>}
     <div className="card"><div className="card-h"><h4>Location</h4></div><div className="card-b"><MapView reports={[r]} officers={r.officerId ? db.officers.filter(o => o.id === r.officerId) : []} selectedId={r.id} height={220}/></div></div>
@@ -60,7 +73,7 @@ export function AdminDashboard({openReport, setView}) {
     </div>
     <div className="grid g-main">
       <div className="card"><div className="card-h"><h4>Live incident map</h4><span className="sp"/><button className="btn btn-ghost btn-sm" onClick={() => setView('map')}>Full map</button></div>
-        <div className="card-b"><MapView reports={R.filter(r => r.verification !== 'false' && r.status !== 'Closed')} officers={db.officers} onSelect={openReport} height={380}/><MapLegend/></div></div>
+        <div className="card-b"><MapView reports={R.filter(r => r.verification !== 'false' && r.status !== 'Closed')} officers={db.officers} rescuers={db.rescuers} onSelect={openReport} height={380}/><MapLegend/></div></div>
       <div className="card"><div className="card-h"><h4>Needs verification</h4><span className="sp"/><Badge color="#D49A00">{pending.length}</Badge></div>
         {pending.length === 0 ? <div className="empty"><b>All clear</b>No pending reports.</div> : pending.slice(0, 5).map(r => <div className="q-item" key={r.id} onClick={() => openReport(r.id)}><TypeIco type={r.type}/><div className="t"><b>{r.type} · {r.address}</b><span>{r.id} · {ago(r.createdAt)} · ~{r.people} people</span></div><button className="btn btn-primary btn-sm">Review</button></div>)}</div>
     </div>
@@ -72,17 +85,19 @@ export function AdminDashboard({openReport, setView}) {
 }
 
 export function AdminReports({openReport}) {
-  const {db} = useApp(); const [f, setF] = useState('all'); const [type, setType] = useState('all'); const [q, setQ] = useState('');
+  const {db} = useApp(); const [f, setF] = useState('all'); const [type, setType] = useState('all'); const [q, setQ] = useState(''); const [status, setStatus] = useState('all'); const [prio, setPrio] = useState('all');
   const counts = {all:db.reports.length, pending:db.reports.filter(r => r.verification === 'pending').length, verified:db.reports.filter(r => r.verification === 'verified').length, false:db.reports.filter(r => r.verification === 'false').length};
-  const rows = db.reports.filter(r => (f === 'all' || r.verification === f) && (type === 'all' || r.type === type) && (!q || (r.id + r.address + r.reporter + r.desc).toLowerCase().includes(q.toLowerCase()))).sort((a, b) => b.createdAt - a.createdAt);
+  const rows = db.reports.filter(r => (f === 'all' || r.verification === f) && (type === 'all' || r.type === type) && (status === 'all' || r.status === status) && (prio === 'all' || (prio === 'none' ? !r.priority : r.priority === prio)) && (!q || (r.id + r.address + r.reporter + r.desc).toLowerCase().includes(q.toLowerCase()))).sort((a, b) => b.createdAt - a.createdAt);
   return <>
     <PageHead title="Disaster Reports" sub="Review each resident report, decide if it is true or false, set priority and assign an officer."/>
     <div className="toolbar"><div className="chips">{[['all','All'],['pending','Unverified'],['verified','True'],['false','False']].map(([k, l]) => <button key={k} className={'chip ' + (f === k ? 'on' : '')} onClick={() => setF(k)}>{l}<span className="n">{counts[k]}</span></button>)}</div>
       <div className="sp"/><select className="input" style={{maxWidth:160}} value={type} onChange={e => setType(e.target.value)}><option value="all">All types</option>{Object.keys(TYPES).map(t => <option key={t}>{t}</option>)}</select>
+      <select className="input" style={{maxWidth:180}} value={status} onChange={e => setStatus(e.target.value)}><option value="all">All statuses</option>{[...FLOW, ...EXTRA_STATUS].map(s => <option key={s}>{s}</option>)}</select>
+      <select className="input" style={{maxWidth:150}} value={prio} onChange={e => setPrio(e.target.value)}><option value="all">All priorities</option>{Object.entries(PRIORITY).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}<option value="none">Not set</option></select>
       <input className="input" placeholder="Search ID, place, reporter…" value={q} onChange={e => setQ(e.target.value)}/></div>
     <div className="card tbl-wrap"><table><thead><tr><th>Report</th><th>Location</th><th>Reported</th><th>Verification</th><th>Priority</th><th>Status</th><th>Officer</th></tr></thead><tbody>
       {rows.map(r => <tr className="row" key={r.id} onClick={() => openReport(r.id)}>
-        <td><div className="row-flex" style={{gap:10,flexWrap:'nowrap'}}><TypeIco type={r.type}/><div><div className="id">{r.id}</div><div className="sm">{r.type}</div></div></div></td>
+        <td><div className="row-flex" style={{gap:10,flexWrap:'nowrap'}}><TypeIco type={r.type}/><div><div className="id">{r.id}</div><div className="sm">{r.type}</div>{r.verification !== 'false' && dupesOf(db, r).length > 0 && <Badge color="#D49A00">POSSIBLE DUPLICATE</Badge>}</div></div></td>
         <td>{r.address}<div className="sm">by {r.reporter}</div></td><td>{ago(r.createdAt)}</td><td><VerifyBadge v={r.verification}/></td><td><PrioBadge p={r.priority}/></td><td><StatusBadge s={r.status}/></td><td>{r.officerId ? offName(db, r.officerId) : <span className="sm">Unassigned</span>}</td></tr>)}
     </tbody></table>{rows.length === 0 && <div className="empty"><b>No reports found</b>Try a different filter.</div>}</div>
   </>;
@@ -94,37 +109,67 @@ export function AdminMap({openReport, selected}) {
   return <>
     <PageHead title="Live Incident Map" sub="Click a pin to open the report. Dashed pins are not yet verified."/>
     <div className="chips" style={{marginBottom:12}}>{[['active','Active missions'],['pending','Unverified'],['all','All open']].map(([k, l]) => <button key={k} className={'chip ' + (show === k ? 'on' : '')} onClick={() => setShow(k)}>{l}</button>)}</div>
-    <div className="card"><div className="card-b"><MapView reports={list} officers={db.officers} selectedId={selected} onSelect={openReport} height={560}/><MapLegend/></div></div>
+    <div className="card"><div className="card-b"><MapView reports={list} officers={db.officers} rescuers={db.rescuers} selectedId={selected} onSelect={openReport} height={560}/><MapLegend/></div></div>
   </>;
 }
 
 export function AdminOfficers() {
   const {db, A, toast} = useApp(); const [adding, setAdding] = useState(false); const [del, setDel] = useState(null);
-  const [form, setForm] = useState({name:'', rank:'Operations Officer', muni:'Meycauayan', phone:'', email:'', password:''}); const [err, setErr] = useState('');
+  const [form, setForm] = useState({name:'', rank:'Operations Officer', muni:'Meycauayan', barangay:'', phone:'', email:'', password:''}); const [err, setErr] = useState('');
   const set = (k, v) => setForm({...form, [k]: v});
   const save = () => {
-    if (!form.name.trim() || !form.email.trim() || !form.password) return setErr('Name, email and password are required.');
+    if (!form.name.trim() || !form.barangay.trim() || !form.email.trim() || !form.password) return setErr('Name, barangay, email and password are required.');
     if (!/^\S+@\S+\.\S+$/.test(form.email)) return setErr('Enter a valid email address.');
     if (form.password.length < 6) return setErr('Password must be at least 6 characters.');
     if (db.officers.some(o => o.email.toLowerCase() === form.email.trim().toLowerCase())) return setErr('That email is already registered.');
-    A.addOfficer(form); setAdding(false); setErr(''); setForm({name:'', rank:'Operations Officer', muni:'Meycauayan', phone:'', email:'', password:''});
+    if (phoneKey(form.phone) && [...(db.officers || []), ...(db.rescuers || [])].some(x => phoneKey(x.phone) === phoneKey(form.phone))) return setErr('That mobile number is already registered to another account.');
+    A.addOfficer(form); setAdding(false); setErr(''); setForm({name:'', rank:'Operations Officer', muni:'Meycauayan', barangay:'', phone:'', email:'', password:''});
   };
   const tryDelete = o => activeTasksOf(db, o.id).length ? toast('Reassign ' + o.name.split(' ')[0] + "'s active tasks before removing this officer.", 'err') : setDel(o);
   return <>
     <PageHead title="Disaster Officers" sub="Add or remove officers who manage rescue teams in each area."><button className="btn btn-primary" onClick={() => setAdding(true)}><Icon n="plus"/>Add officer</button></PageHead>
     <div className="grid g3">{db.officers.map(o => { const n = activeTasksOf(db, o.id).length; return <div className="card off-card" key={o.id}>
       <div className="top-r"><div className="avatar">{initials(o.name)}</div><div className="sp"><b style={{fontSize:16}}>{o.name}</b><div className="hint">{o.rank}</div></div><Badge color={n ? '#FF5B14' : '#12A150'}>{n ? 'On mission' : 'Available'}</Badge></div>
-      <dl><dt>Station</dt><dd>{o.station}</dd><dt>Area</dt><dd>{o.muni}</dd><dt>Phone</dt><dd>{o.phone || '—'}</dd><dt>Email</dt><dd>{o.email}</dd><dt>Active</dt><dd>{n} task{n === 1 ? '' : 's'}</dd></dl>
+      <dl><dt>Station</dt><dd>{o.station}</dd><dt>Area</dt><dd>{o.barangay ? o.barangay + ', ' : ''}{o.muni}</dd><dt>Rescuers</dt><dd>{(db.rescuers || []).filter(x => x.officerId === o.id).length}</dd><dt>Phone</dt><dd>{o.phone || '—'}</dd><dt>Email</dt><dd>{o.email}</dd><dt>Active</dt><dd>{n} task{n === 1 ? '' : 's'}</dd></dl>
       <div className="foot"><span className="sp"/><button className="btn btn-ghost btn-sm" style={{color:'var(--red)'}} onClick={() => tryDelete(o)}><Icon n="trash"/>Remove</button></div></div>; })}</div>
     {adding && <Modal title="Add Disaster Officer" onClose={() => setAdding(false)} footer={<><button className="btn btn-ghost" onClick={() => setAdding(false)}>Cancel</button><button className="btn btn-primary" onClick={save}>Create account</button></>}>
       {err && <div className="err">{err}</div>}
       <div className="field"><label>Full name (with rank)</label><input className="input" value={form.name} onChange={e => set('name', e.target.value)} placeholder="Lt. Juan Dela Cruz"/></div>
       <div className="grid g2"><div className="field"><label>Position</label><select className="input" value={form.rank} onChange={e => set('rank', e.target.value)}><option>Station Commander</option><option>Operations Officer</option><option>Field Commander</option></select></div>
         <div className="field"><label>Assigned area</label><select className="input" value={form.muni} onChange={e => set('muni', e.target.value)}>{Object.keys(MUNI).map(m => <option key={m}>{m}</option>)}</select></div></div>
+      <div className="field"><label>Barangay (this officer's area of responsibility)</label><input className="input" value={form.barangay} onChange={e => set('barangay', e.target.value)} placeholder="Brgy. Libtong"/></div>
       <div className="field"><label>Mobile number</label><input className="input" value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="09XX XXX XXXX"/></div>
       <div className="grid g2"><div className="field"><label>Email (login)</label><input className="input" value={form.email} onChange={e => set('email', e.target.value)}/></div><div className="field"><label>Temporary password</label><input className="input" type="text" value={form.password} onChange={e => set('password', e.target.value)}/></div></div>
-      <p className="hint">The officer's map location is set from the station of the chosen area.</p></Modal>}
+      <p className="hint">The officer can create rescuer accounts for this barangay. The map location is set from the station of the chosen area.</p></Modal>}
     {del && <Confirm danger title="Remove officer?" body={`${del.name} will lose access immediately. This cannot be undone.`} label="Remove officer" onNo={() => setDel(null)} onYes={() => { A.removeOfficer(del.id); setDel(null); }}/>}
+  </>;
+}
+
+export function AdminResidents() {
+  const {toast} = useApp(); const [rows, setRows] = useState(null);
+  const load = () => api('/residents', {method: 'GET'}).then(setRows).catch(e => { setRows([]); toast(e.message, 'err'); });
+  useEffect(() => { load(); }, []);
+  const reinstate = async x => { try { await api('/residents/' + encodeURIComponent(x.key) + '/reinstate', {}); toast(x.name + ' reinstated'); load(); } catch (e) { toast(e.message, 'err'); } };
+  return <>
+    <PageHead title="Invalid Residents" sub="Residents whose reports were marked FALSE. After the limit is reached the account is invalid and can no longer submit reports."/>
+    {rows === null ? <div className="card empty"><b>Loading…</b></div> : rows.length === 0 ? <div className="card empty"><b>No residents flagged</b>Residents appear here after a report of theirs is marked as false information.</div> :
+    <div className="card tbl-wrap"><table><thead><tr><th>Resident</th><th>Contact</th><th>False reports</th><th>Status</th><th></th></tr></thead><tbody>{rows.map(x => <tr key={x.key}>
+      <td><b>{x.name || '—'}</b></td><td>{x.phone || (x.uid ? 'App account' : '—')}</td><td>{(x.falseReports || []).length}{(x.falseReports || []).length ? ' · ' + x.falseReports.join(', ') : ''}</td>
+      <td><Badge color={x.status === 'invalid' ? '#D92D20' : '#D49A00'}>{x.status === 'invalid' ? 'INVALID' : 'Warned'}</Badge></td>
+      <td>{x.status === 'invalid' && <button className="btn btn-ghost btn-sm" onClick={() => reinstate(x)}>Reinstate</button>}</td></tr>)}</tbody></table></div>}
+  </>;
+}
+
+export function AdminRescuers() {
+  const {db, A} = useApp(); const [del, setDel] = useState(null); const rows = db.rescuers || [];
+  return <>
+    <PageHead title="Rescuers" sub="Field team members. Each rescuer is created by a Disaster Officer and belongs to that officer's barangay."/>
+    {rows.length === 0 ? <div className="card empty"><b>No rescuers yet</b>Disaster Officers add their own rescuers from their "My Rescuers" page.</div> :
+    <div className="grid g3">{rows.map(x => <div className="card off-card" key={x.id}>
+      <div className="top-r"><div className="avatar">{initials(x.name)}</div><div className="sp"><b style={{fontSize:16}}>{x.name}</b><div className="hint">{(UNITS[x.unit] || {}).icon} {x.unit} team</div></div></div>
+      <dl><dt>Officer</dt><dd>{offName(db, x.officerId)}</dd><dt>Barangay</dt><dd>{x.barangay}, {x.muni}</dd><dt>Phone</dt><dd>{x.phone || '—'}</dd><dt>Email</dt><dd>{x.email}</dd></dl>
+      <div className="foot"><span className="sp"/><button className="btn btn-ghost btn-sm" style={{color:'var(--red)'}} onClick={() => setDel(x)}><Icon n="trash"/>Remove</button></div></div>)}</div>}
+    {del && <Confirm danger title="Remove rescuer?" body={del.name + ' will lose access immediately.'} label="Remove rescuer" onNo={() => setDel(null)} onYes={() => { A.removeRescuer(del.id); setDel(null); }}/>}
   </>;
 }
 
@@ -170,18 +215,24 @@ export function AdminApp({onLogout}) {
     {key:'reports', label:'Reports', icon:'reports', badge:db.reports.filter(r => r.verification === 'pending').length},
     {key:'map', label:'Live Map', icon:'map'},
     {key:'officers', label:'Officers', icon:'users'},
+    {key:'rescuers', label:'Rescuers', icon:'users'},
+    {key:'residents', label:'Invalid Residents', icon:'alert'},
     {key:'backup', label:'Backup Requests', icon:'backup', badge:db.reports.filter(r => r.backup && r.backup.status === 'requested').length},
     {key:'missions', label:'Mission Reports', icon:'check', badge:db.reports.filter(r => r.status === 'Resolved').length},
+    {key:'analytics', label:'Reports & Statistics', icon:'reports'},
     {key:'audit', label:'Audit Trail', icon:'log'}
   ];
   return <Frame roleLabel="Administrator" user={{name:ADMIN.name, title:ADMIN.title}} nav={nav} view={view} setView={setView} onOpenReport={id => id && setOpen(id)} notifTo="admin" onLogout={onLogout} title={nav.find(n => n.key === view).label}
-    topExtra={<button className="btn btn-yellow btn-sm" onClick={A.simulateReport} title="Demo: pretend a resident just sent a report from the mobile app"><Icon n="send"/><span>Simulate resident report</span></button>}>
+    topExtra={<><button className="btn btn-yellow btn-sm" onClick={A.simulateReport} title="Demo: pretend a resident just sent a report from the mobile app"><Icon n="send"/><span>Simulate resident report</span></button></>}>
     {view === 'dashboard' && <AdminDashboard openReport={setOpen} setView={setView}/>}
     {view === 'reports' && <AdminReports openReport={setOpen}/>}
     {view === 'map' && <AdminMap openReport={setOpen} selected={open}/>}
     {view === 'officers' && <AdminOfficers/>}
+    {view === 'rescuers' && <AdminRescuers/>}
+    {view === 'residents' && <AdminResidents/>}
     {view === 'backup' && <AdminBackup openReport={setOpen}/>}
     {view === 'missions' && <AdminMissions openReport={setOpen}/>}
+    {view === 'analytics' && <Analytics personal/>}
     {view === 'audit' && <AdminAudit/>}
     {open && <AdminReportDrawer id={open} onClose={() => setOpen(null)}/>}
   </Frame>;

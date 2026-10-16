@@ -3,18 +3,13 @@ import { KEY, ADMIN, TYPES, PRIORITY, UNITS, RECOMMENDED, UNIT_FLOW, FLOW, STATU
 import { ICONS, Icon, Logo, Badge, StatusBadge, PrioBadge, VerifyBadge, TypeIco, Donut, StatCard, PageHead, Drawer, Modal, Confirm, Timeline, FlowBar } from '../components/ui';
 import { Ctx, useApp } from '../context';
 export function Login({onLogin}) {
-  const {db} = useApp();
   const [role, setRole] = useState('admin'); const [email, setEmail] = useState(''); const [pw, setPw] = useState(''); const [show, setShow] = useState(false); const [err, setErr] = useState('');
-  const submit = e => {
+  const [busy, setBusy] = useState(false);
+  const submit = async e => {
     e.preventDefault(); setErr('');
     if (!email.trim() || !pw) return setErr('Please enter your email and password.');
-    if (role === 'admin') {
-      if (email.trim().toLowerCase() === ADMIN.email && pw === ADMIN.password) return onLogin({role:'admin'});
-      return setErr('Invalid administrator credentials.');
-    }
-    const o = db.officers.find(x => x.email.toLowerCase() === email.trim().toLowerCase() && x.password === pw);
-    if (!o) return setErr('Invalid officer credentials. Accounts are created by the Administrator.');
-    onLogin({role:'officer', id:o.id});
+    setBusy(true);
+    try { await onLogin(role, email.trim(), pw); } catch (x) { setErr(x.message); } finally { setBusy(false); }
   };
   const fill = (r, e, p) => { setRole(r); setEmail(e); setPw(p); setErr(''); };
   return <div className="login">
@@ -31,18 +26,18 @@ export function Login({onLogin}) {
       <form className="login-card" onSubmit={submit}>
         <h2>Command Login</h2><p className="sub">Authorized personnel only.</p>
         <div className="role-tabs">
-          <button type="button" className={'role-tab ' + (role === 'admin' ? 'on' : '')} onClick={() => { setRole('admin'); setErr(''); }}><b>Admin</b><span>Verify · Prioritize · Assign</span></button>
-          <button type="button" className={'role-tab ' + (role === 'officer' ? 'on' : '')} onClick={() => { setRole('officer'); setErr(''); }}><b>Disaster Officer</b><span>Dispatch rescue teams</span></button>
+          <button type="button" className={'role-tab ' + (role === 'admin' ? 'on' : '')} onClick={() => { setRole('admin'); setErr(''); }}><b>Admin</b><span>Verify · Assign</span></button>
+          <button type="button" className={'role-tab ' + (role === 'officer' ? 'on' : '')} onClick={() => { setRole('officer'); setErr(''); }}><b>Officer</b><span>Dispatch teams</span></button>
+          <button type="button" className={'role-tab ' + (role === 'rescuer' ? 'on' : '')} onClick={() => { setRole('rescuer'); setErr(''); }}><b>Rescuer</b><span>Field team</span></button>
         </div>
         {err && <div className="err">{err}</div>}
-        <div className="field"><label>Email address</label><input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder={role === 'admin' ? 'admin@rescue.ph' : 'officer@rescue.ph'}/></div>
+        <div className="field"><label>Email address</label><input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder={role + '@rescue.ph'}/></div>
         <div className="field"><label>Password</label><div className="pw"><input className="input" type={show ? 'text' : 'password'} value={pw} onChange={e => setPw(e.target.value)} placeholder="••••••••"/><button type="button" onClick={() => setShow(!show)}>{show ? 'HIDE' : 'SHOW'}</button></div></div>
-        <button className="btn btn-primary btn-block" style={{padding:13,fontSize:16}}>Log in as {role === 'admin' ? 'Administrator' : 'Disaster Officer'}</button>
+        <button className="btn btn-primary btn-block" style={{padding:13,fontSize:16}} disabled={busy}>{busy ? 'Signing in…' : 'Log in as ' + {admin:'Administrator', officer:'Disaster Officer', rescuer:'Rescuer'}[role]}</button>
         <div className="demo"><b>Demo accounts (click to fill)</b>
           <button type="button" onClick={() => fill('admin', ADMIN.email, ADMIN.password)}>🛡️ Admin — <code>admin@rescue.ph</code> / <code>admin123</code></button>
-          <button type="button" onClick={() => fill('officer', 'ana@rescue.ph', 'officer123')}>👮 Officer — <code>ana@rescue.ph</code> / <code>officer123</code></button>
-          <button type="button" onClick={() => fill('officer', 'pedro@rescue.ph', 'officer123')}>👮 Officer — <code>pedro@rescue.ph</code> / <code>officer123</code></button></div>
-        <div className="disclaimer"><Icon n="alert"/><span>Front-end prototype. Data is stored only in this browser. Your session is protected by role-based access in the final system.</span></div>
+</div>
+        <div className="disclaimer"><Icon n="alert"/><span>Sign-in is handled by Firebase Authentication. Roles are enforced on the server.</span></div>
       </form>
     </section>
   </div>;

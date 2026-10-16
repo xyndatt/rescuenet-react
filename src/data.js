@@ -1,5 +1,5 @@
 export const KEY = 'rescuenet-ui-v1';
-export const ADMIN = { name: 'Dir. Elena Marquez', title: 'Operations Administrator', email: 'admin@rescue.ph', password: 'admin123' };
+export const ADMIN = { name: 'Admin', title: 'Operations Administrator', email: 'admin@rescue.ph', password: 'admin123' };
 
 export const TYPES = {
   Flood:{icon:'🌊',color:'#1D6FDB'}, Fire:{icon:'🔥',color:'#D92D20'}, Earthquake:{icon:'🏚️',color:'#8A5A2B'},
@@ -19,7 +19,7 @@ export const UNIT_FLOW = ['Dispatched','En Route','On Scene','Completed'];
 export const FLOW = ['Submitted','Under Verification','Verified','Awaiting Assignment','Team Assigned','Rescue in Progress','Resolved','Closed'];
 export const STATUS_COLOR = {
   'Submitted':'#5B6B82','Under Verification':'#D49A00','Verified':'#1D6FDB','Awaiting Assignment':'#FF5B14',
-  'Team Assigned':'#6B4FD3','Rescue in Progress':'#D92D20','Resolved':'#12A150','Closed':'#0B1B33','Rejected':'#8A94A6'
+  'Team Assigned':'#6B4FD3','Rescue in Progress':'#D92D20','Resolved':'#12A150','Closed':'#0B1B33','Rejected':'#8A94A6','Duplicate':'#8A94A6','Cancelled':'#8A94A6'
 };
 export const MUNI = {
   'Meycauayan':[14.7370,120.9604],'Marilao':[14.7581,120.9494],'Bocaue':[14.7986,120.9264],'Balagtas':[14.8150,120.9094],
@@ -47,7 +47,8 @@ export function ago(ts) {
 export const initials = n => n.replace(/^(Capt\.|Lt\.|Insp\.|Dir\.|Maj\.|Col\.)\s*/,'').split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase();
 export const getR = (d, id) => d.reports.find(r => r.id === id);
 export const offName = (db, id) => { const o = db.officers.find(x => x.id === id); return o ? o.name : '—'; };
-export const isActive = r => r.verification === 'verified' && !['Resolved','Closed','Rejected'].includes(r.status);
+export const EXTRA_STATUS = ['Rejected','Duplicate','Cancelled'];
+export const isActive = r => r.verification === 'verified' && !['Resolved','Closed',...EXTRA_STATUS].includes(r.status);
 export const prioSort = (a, b) => (a.priority ? PRIORITY[a.priority].rank : 9) - (b.priority ? PRIORITY[b.priority].rank : 9) || b.createdAt - a.createdAt;
 export function activeTasksOf(db, oid) {
   return db.reports.filter(r => isActive(r) && (r.officerId === oid || (r.backup && r.backup.status === 'assigned' && r.backup.officerId === oid)));
@@ -62,13 +63,7 @@ export function seed() {
   const now = Date.now(), m = x => now - x * 60000;
   const base = {verification:'pending', priority:null, status:'Submitted', officerId:null, dispatches:[], backupAlert:null, backup:null, completion:null, forwarded:false, officerSummary:'', rejectReason:'', timeline:[]};
   const tl = (t, by, text) => ({at:m(t), by, text});
-  const officers = [
-    {id:'o1', name:'Capt. Ramon Dela Cruz', rank:'Station Commander', station:'Meycauayan Rescue Station', muni:'Meycauayan', lat:14.7340, lng:120.9600, phone:'0917 301 1101', email:'ramon@rescue.ph', password:'officer123'},
-    {id:'o2', name:'Lt. Maria Santos', rank:'Operations Officer', station:'Malolos Rescue Station', muni:'Malolos', lat:14.8450, lng:120.8100, phone:'0918 301 2202', email:'maria@rescue.ph', password:'officer123'},
-    {id:'o3', name:'Insp. Jose Reyes', rank:'Field Commander', station:'Bocaue Rescue Station', muni:'Bocaue', lat:14.7990, lng:120.9270, phone:'0919 301 3303', email:'jose@rescue.ph', password:'officer123'},
-    {id:'o4', name:'Lt. Ana Villanueva', rank:'Operations Officer', station:'SJDM Rescue Station', muni:'San Jose del Monte', lat:14.8130, lng:121.0440, phone:'0920 301 4404', email:'ana@rescue.ph', password:'officer123'},
-    {id:'o5', name:'Capt. Pedro Bautista', rank:'Station Commander', station:'Hagonoy Rescue Station', muni:'Hagonoy', lat:14.8340, lng:120.7340, phone:'0921 301 5505', email:'pedro@rescue.ph', password:'officer123'}
-  ];
+  const officers = [];   // no demo officers: the Administrator creates them
   const reports = [
     {...base, id:'DR-2026-0101', type:'Flood', reporter:'Juan Dela Cruz', phone:'0917 555 0142', address:'Brgy. Calvario, Meycauayan', lat:14.7405, lng:120.9570, people:12, createdAt:m(6),
       desc:'Waist-deep floodwater entering homes along the creek. 3 elderly residents stranded on the 2nd floor.', timeline:[tl(6,'Resident (Mobile)','Report submitted with GPS location and 2 photos')]},
@@ -102,20 +97,12 @@ export function seed() {
       backup:{reason:'Large number of stranded residents; one SRR team is not enough. Need extra boats and an ambulance.', requestedBy:'o2', requestedAt:m(14), status:'requested', officerId:null},
       timeline:[tl(150,'Resident (Mobile)','Report submitted'), tl(140,'Admin','Report verified as TRUE information'), tl(138,'Admin','Task assigned to Lt. Maria Santos'), tl(120,'Lt. Maria Santos','Dispatched SRR'), tl(14,'Lt. Maria Santos','Backup requested via Admin')]}
   ];
-  const notifs = [
-    {id:uid(), to:'admin', text:'DR-2026-0101 · New Flood report from Brgy. Calvario, Meycauayan', reportId:'DR-2026-0101', kind:'info', at:m(6), read:false},
-    {id:uid(), to:'admin', text:'DR-2026-0102 · New Fire report from Brgy. Lambakin, Marilao', reportId:'DR-2026-0102', kind:'info', at:m(11), read:false},
-    {id:uid(), to:'admin', text:'BACKUP REQUEST · Lt. Maria Santos needs backup for DR-2026-0109', reportId:'DR-2026-0109', kind:'alert', at:m(14), read:false},
-    {id:uid(), to:'o4', text:'NEW TASK · Critical Landslide at Brgy. Tungkong Mangga. Dispatch a team now.', reportId:'DR-2026-0103', kind:'alert', at:m(29), read:false},
-    {id:uid(), to:'o5', text:'BACKUP ALERT · SRR team on DR-2026-0104 is requesting backup', reportId:'DR-2026-0104', kind:'alert', at:m(8), read:false},
-    {id:uid(), to:'admin', text:'DR-2026-0106 · Completion report forwarded by Insp. Jose Reyes', reportId:'DR-2026-0106', kind:'info', at:m(55), read:false}
-  ];
-  const audit = [
-    {id:uid(), actor:'Admin', action:'Marked report as FALSE information', reportId:'DR-2026-0105', at:m(110)},
-    {id:uid(), actor:'Admin', action:'Assigned task to Lt. Ana Villanueva', reportId:'DR-2026-0103', at:m(29)},
-    {id:uid(), actor:'Lt. Maria Santos', action:'Requested backup via Admin', reportId:'DR-2026-0109', at:m(14)}
-  ];
-  return {officers, reports, notifs, audit};
+  // Only 4 fresh, unverified starter reports are kept (Flood, Fire, Landslide, Storm); everything else was removed.
+  const KEEP = ['DR-2026-0101', 'DR-2026-0102', 'DR-2026-0103', 'DR-2026-0107'];
+  const starter = reports.filter(r => KEEP.includes(r.id)).map(r => ({...r, verification:'pending', priority:null, status:'Submitted', officerId:null, dispatches:[], backupAlert:null, backup:null, completion:null, forwarded:false, officerSummary:'', rejectReason:'', timeline:[r.timeline[0]]}));
+  const notifs = starter.map(r => ({id:uid(), to:'admin', text:r.id + ' · New ' + r.type + ' report from ' + r.address, reportId:r.id, kind:'info', at:r.createdAt, read:false}));
+  const audit = [];
+  return {officers, reports:starter, notifs, audit};
 }
 export function loadDb() { try { const s = localStorage.getItem(KEY + '-db'); if (s) return JSON.parse(s); } catch (e) {} return seed(); }
 export function loadSession() { try { const s = localStorage.getItem(KEY + '-session'); if (s) return JSON.parse(s); } catch (e) {} return null; }

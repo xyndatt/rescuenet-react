@@ -1,0 +1,48 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "rescuenet": {
+      "officers": {
+        ".read": "auth != null && (auth.token.role === 'admin' || auth.token.role === 'officer' || auth.token.role === 'rescuer')"
+      },
+      "reports": {
+        ".indexOn": [
+          "officerId"
+        ],
+        ".read": "auth != null && (auth.token.role === 'admin' || auth.token.role === 'officer') || (auth != null && auth.token.role === 'rescuer' && query.orderByChild === 'officerId' && query.equalTo === auth.token.officerId)"
+      },
+      "live": {
+        ".read": "auth != null && (auth.token.role === 'admin' || auth.token.role === 'officer')"
+      },
+      "notifs": {
+        ".indexOn": [
+          "to"
+        ],
+        ".read": "auth != null && query.orderByChild === 'to' && query.equalTo === (auth.token.role === 'admin' ? 'admin' : (auth.token.role === 'officer' ? auth.token.officerId : auth.token.rescuerId))"
+      },
+      "admins": {
+        ".read": "auth != null && auth.token.role === 'admin'"
+      },
+      "audit": {
+        ".indexOn": [
+          "at"
+        ],
+        ".read": "auth != null && auth.token.role === 'admin'"
+      },
+      "photoData": {
+        "$reportId": {
+          "$photoId": {
+            ".read": "auth != null && (auth.token.role === 'admin' || auth.token.role === 'officer' || auth.token.role === 'rescuer')"
+          }
+        }
+      },
+      "rescuers": {
+        ".indexOn": [
+          "officerId"
+        ],
+        ".read": "auth != null && (auth.token.role === 'admin' || (auth.token.role === 'officer' && query.orderByChild === 'officerId' && query.equalTo === auth.token.officerId))"
+      }
+    }
+  }
+}
